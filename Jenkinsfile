@@ -22,8 +22,8 @@ pipeline {
             steps {
                 sh '''
                     docker run --rm \
-                    -v $WORKSPACE:/app \
-                    -w /app \
+                    -v jenkins-data:/var/jenkins_home \
+                    -w /var/jenkins_home/workspace/sentiment-ai-pipeline \
                     python:3.12-slim \
                     sh -c "ls -la && pip install flake8 -q && flake8 src/ --max-line-length=100"
                 '''
