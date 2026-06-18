@@ -3,7 +3,8 @@ pipeline {
 
     environment {
         IMAGE_NAME = 'sentiment-ai'
-        REGISTRY = 'ghcr.io/amin-0810'
+        REGISTRY = 'ghcr.io/VOTRE_PSEUDO'
+        IMAGE_TAG = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
     }
 
     stages {
@@ -19,13 +20,13 @@ pipeline {
 
         stage('Lint') {
             steps {
-                sh """
+                sh '''
                     docker run --rm \
-                    -v ${WORKSPACE}:/app \
+                    -v $WORKSPACE:/app \
                     -w /app \
                     python:3.12-slim \
                     sh -c "pip install flake8 -q && flake8 src/ --max-line-length=100"
-                """
+                '''
             }
         }
 
