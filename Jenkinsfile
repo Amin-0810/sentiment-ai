@@ -19,16 +19,13 @@ pipeline {
 
         stage('Lint') {
             steps {
-                sh '''
-                docker run --rm \
-                    -v $WORKSPACE:/app \
+                sh """
+                    docker run --rm \
+                    -v ${WORKSPACE}:/app \
                     -w /app \
                     python:3.12-slim \
-                    sh -c "
-                        pip install -q flake8 &&
-                        flake8 src --max-line-length=100
-                    "
-                '''
+                    sh -c "pip install flake8 -q && flake8 src/ --max-line-length=100"
+                """
             }
         }
 
