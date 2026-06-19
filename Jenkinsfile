@@ -14,7 +14,6 @@ pipeline {
                 checkout scm
                 echo "Branche : ${env.BRANCH_NAME}"
                 echo "Commit : ${env.GIT_COMMIT}"
-                sh 'git log --oneline -5'
             }
         }
 
@@ -30,20 +29,26 @@ pipeline {
             }
         }
 
+        stage('IaC Validate') {
+            steps {
+                dir('infra') {
+                    sh 'terraform init -backend=false -input=false'
+                    sh 'terraform fmt -check'
+                    sh 'terraform validate'
+                }
+            }
+        }
+
         stage('Build & Test') {
             steps {
                 sh '''
                     docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
                     docker rm -f test-runner 2>/dev/null || true
                     set +e
-                    docker run \
-                    -e CI=true \
-                    --name test-runner \
+                    docker run -e CI=true --name test-runner \
                     ${IMAGE_NAME}:${IMAGE_TAG} \
-                    pytest tests/ -v \
-                    --cov=src \
+                    pytest tests/ -v --cov=src \
                     --cov-report=xml:/tmp/coverage.xml \
-                    --cov-report=term-missing \
                     --cov-fail-under=70
                     TEST_EXIT_CODE=$?
                     set -e
@@ -51,11 +56,6 @@ pipeline {
                     docker rm -f test-runner 2>/dev/null || true
                     exit $TEST_EXIT_CODE
                 '''
-            }
-            post {
-                failure {
-                    echo 'Tests échoués ou coverage insuffisant (<70%)'
-                }
             }
         }
 
@@ -75,13 +75,8 @@ pipeline {
                         sonarsource/sonar-scanner-cli:latest \
                         sonar-scanner \
                         -Dsonar.projectKey=sentiment-ai \
-                        -Dsonar.projectName=SentimentAI \
-                        -Dsonar.projectBaseDir="$WORKSPACE" \
                         -Dsonar.sources=src \
-                        -Dsonar.python.version=3.11 \
-                        -Dsonar.python.coverage.reportPaths=coverage.xml \
-                        -Dsonar.sourceEncoding=UTF-8 \
-                        -Dsonar.scanner.metadataFilePath=$WORKSPACE/report-task.txt
+                        -Dsonar.python.coverage.reportPaths=coverage.xml
                     '''
                 }
             }
@@ -110,7 +105,6 @@ pipeline {
             post {
                 failure {
                     echo 'Vulnérabilités CRITICAL ou HIGH détectées !'
-                    echo 'Corrigez les dépendances avant de déployer.'
                 }
             }
         }
@@ -134,15 +128,23 @@ pipeline {
             }
         }
 
+        stage('IaC Apply') {
+            when { branch 'main' }
+            steps {
+                dir('infra') {
+                    sh 'terraform init -input=false'
+                    sh """
+                        terraform apply -auto-approve \
+                        -var='image_tag=${IMAGE_TAG}'
+                    """
+                }
+            }
+        }
+
         stage('Deploy Staging') {
             when { branch 'main' }
             steps {
-                echo "Déploiement de ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} en staging..."
-                sh '''
-                    docker compose -f docker-compose.yml -p staging down 2>/dev/null || true
-                    docker compose -f docker-compose.yml -p staging up -d
-                    echo "Staging disponible sur http://localhost:8082"
-                '''
+                sh 'curl -f http://localhost:8001/health || exit 1'
             }
         }
     }
@@ -152,10 +154,10 @@ pipeline {
             sh 'docker compose down -v 2>/dev/null || true'
         }
         success {
-            echo "Pipeline réussi ! Image : ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+            echo "Pipeline OK -- ${IMAGE_TAG} déployé"
         }
         failure {
-            echo 'Pipeline échoué. Consultez les logs ci-dessus.'
+            echo 'Pipeline KO'
         }
     }
 }
