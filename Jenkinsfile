@@ -149,6 +149,42 @@ pipeline {
         }
     }
 
+        stage ('Smoke Test') {
+            when { branch 'main' }
+            steps {
+                sh '''
+                    echo " Attente dé marrage (10 s) ..."
+                    sleep 10
+
+                    # 1. L'app r é pond
+                    curl -f http :// localhost :8001/ health || exit 1
+                    echo "/ health OK"
+
+                    # 2. Les mé triques sont expos ées
+                    curl -s http :// localhost :8001/ metrics | \
+                        grep -q sentiment_predictions_total || exit 1
+                    echo "/ metrics OK -- mé triques SentimentAI pré sentes "
+
+                    # 3. Prometheus scrape l'app
+                    sleep 20 # attendre au moins 1 scrape (15s)
+                    curl -s " http :// localhost :9090/ api /v1/ query ?\
+        query =up{job= ' sentiment -ai '}" | \
+                        grep -q '" value ":.*1 ' || exit 1
+                    echo 'Prometheus scrape sentiment -ai : UP'
+
+                    # 4. Grafana ré pond
+                    curl -f http :// localhost :3000/ api / health || exit 1
+                    echo 'Grafana OK'
+                '''
+            }
+            post {
+                failure {
+                    sh 'docker logs prometheus || true'
+                    sh 'docker logs sentiment - staging || true'
+                    echo 'Smoke Test KO -- voir logs ci - dessus'
+                }
+            }
+        }
     post {
         always {
             sh 'docker compose down -v 2>/dev/null || true'
